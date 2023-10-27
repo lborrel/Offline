@@ -19,8 +19,8 @@
 #include "Offline/Mu2eUtilities/inc/MVATools.hh"
 // data
 #include "Offline/RecoDataProducts/inc/KalSeed.hh"
-#include "Offline/RecoDataProducts/inc/TrkCaloHitPID.hh"
-#include "Offline/RecoDataProducts/inc/RecoQual.hh"
+#include "Offline/RecoDataProducts/inc/MVAResult.hh"
+#include "Offline/TrkDiag/inc/trackPID.hxx"
 #include "Offline/GeometryService/inc/GeomHandle.hh"
 #include "Offline/CalorimeterGeom/inc/DiskCalorimeter.hh"
 // C++
@@ -32,8 +32,12 @@
 #include <vector>
 using namespace std;
 
+namespace TMVA_SOFIE_trackPID {
+  class Session;
+}
+
 namespace mu2e {
-  class TrackPID : public art::EDProducer {
+  class TrackPIDV2 : public art::EDProducer {
     public:
       using Name=fhicl::Name;
       using Comment=fhicl::Comment;
@@ -51,7 +55,7 @@ namespace mu2e {
       };
 
       using Parameters = art::EDProducer::Table<Config>;
-      explicit TrackPID(const Parameters& conf);
+      explicit TrackPIDV2(const Parameters& conf);
 
     private:
       void produce(art::Event& event) override;
@@ -59,9 +63,11 @@ namespace mu2e {
       float _maxde, _dtoffset;
       art::InputTag _kalSeedTag;
       MVATools* _tchmva;
+
+      std::shared_ptr<TMVA_SOFIE_trackPID::Session> mva_;
   };
 
-  TrackPID::TrackPID(const Parameters& config ) :
+  TrackPIDV2::TrackPIDV2(const Parameters& config ) :
     art::EDProducer(config),
     _debug(config().debug()),
     _maxde(config().MaxDE()),
@@ -69,26 +75,23 @@ namespace mu2e {
     _kalSeedTag(config().KSC()),
     _tchmva(new MVATools(config().MVAConfig()))
   {
-    produces<TrkCaloHitPIDCollection>();
-    produces<RecoQualCollection>();
+    produces<MVAResultCollection>();
     _tchmva->initMVA();
     if(_debug> 0)_tchmva->showMVA();
+    mva_ = std::make_shared<TMVA_SOFIE_trackPID::Session>("Offline/TrkDiag/data/trackPID.dat");
   }
 
-  void TrackPID::produce(art::Event& event ) {
+  void TrackPIDV2::produce(art::Event& event ) {
     mu2e::GeomHandle<mu2e::Calorimeter> calo;
     // create output
-    unique_ptr<TrkCaloHitPIDCollection> tchpcol(new TrkCaloHitPIDCollection());
-    unique_ptr<RecoQualCollection> rqcol(new RecoQualCollection());
+    unique_ptr<MVAResultCollection> mvacol(new MVAResultCollection());
     // get the KalSeeds
     art::Handle<KalSeedCollection> kalSeedHandle;
     event.getByLabel(_kalSeedTag, kalSeedHandle);
     const auto& kalSeeds = *kalSeedHandle;
 
     for (const auto& kseed : kalSeeds) {
-      TrkCaloHitPID tchpid;
-      tchpid.setMVAStatus(MVAStatus::unset);
-      tchpid.setMVAValue(-1.0);
+      std::array<float,5> features; // features used for training
 
       static TrkFitFlag goodfit(TrkFitFlag::kalmanOK);
       if (kseed.status().hasAllProperties(goodfit)){
@@ -103,34 +106,31 @@ namespace mu2e {
           else
             throw cet::exception("RECO")<<"mu2e::TrackPID: KalSeed segment missing" << endl;
           // compute the energy difference, assuming an electron mass
-          tchpid[TrkCaloHitPID::DeltaE] = cc->energyDep() - sqrt(trkmom.Mag2());
-          tchpid[TrkCaloHitPID::ClusterLen] = tchs.hitLen();
+          features[0] = cc->energyDep() - sqrt(trkmom.Mag2());
+          features[1] = tchs.hitLen();
           // move into detector coordinates.  Yikes!!
           XYZVectorF cpos = XYZVectorF(calo->geomUtil().mu2eToTracker(calo->geomUtil().diskFFToMu2e( cc->diskID(), cc->cog3Vector())));
-          tchpid[TrkCaloHitPID::RPOCA] = sqrt(cpos.Perp2());
+          features[2] = sqrt(cpos.Perp2());
           // compute transverse direction WRT position
           cpos.SetZ(0.0);
           trkmom.SetZ(0.0);
-          tchpid[TrkCaloHitPID::TrkDir] = cpos.Dot(trkmom)/sqrt(cpos.Mag2()*trkmom.Mag2());
+          features[3] = cpos.Dot(trkmom)/sqrt(cpos.Mag2()*trkmom.Mag2());
           // the following includes the (Calibrated) light-propagation time delay.  It should eventually be put in the reconstruction FIXME!
           // This velocity should come from conditions FIXME!
-          tchpid[TrkCaloHitPID::DeltaT] = tchs.t0().t0()-tchs.time()- std::min((float)200.0,std::max((float)0.0,tchs.hitLen()))*0.005 - _dtoffset;
+          features[4] = tchs.t0().t0()-tchs.time()- std::min((float)200.0,std::max((float)0.0,tchs.hitLen()))*0.005 - _dtoffset;
           // hard cut on the energy difference.  This rejects cosmic rays which hit the calo and produce an upstream-going track that is then
           // reconstructed as a downstream particle associated to this cluster
-          if(tchpid[TrkCaloHitPID::DeltaE] < _maxde){
+          if(features[0] < _maxde){
             // evaluate the MVA
-            tchpid.setMVAValue(_tchmva->evalMVA(tchpid.values()));
-            tchpid.setMVAStatus(MVAStatus::calculated);
+            auto mvaout = mva_->infer(features.data());
+            mvacol->push_back(MVAResult(mvaout[0]));
           }
         }
       }
-      tchpcol->push_back(tchpid);
-      rqcol->push_back(RecoQual(tchpid.status(),tchpid.MVAValue()));
     }
     // put the output products into the event
-    event.put(move(tchpcol));
-    event.put(move(rqcol));
+    event.put(move(mvacol));
   }
 }// mu2e
 
-DEFINE_ART_MODULE(mu2e::TrackPID)
+DEFINE_ART_MODULE(mu2e::TrackPIDV2)
