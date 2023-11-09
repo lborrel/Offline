@@ -20,7 +20,7 @@
 // data
 #include "Offline/RecoDataProducts/inc/KalSeed.hh"
 #include "Offline/RecoDataProducts/inc/MVAResult.hh"
-#include "Offline/TrkDiag/inc/trackPID.hxx"
+#include "Offline/TrkDiag/inc/TrackPID.hxx"
 #include "Offline/GeometryService/inc/GeomHandle.hh"
 #include "Offline/CalorimeterGeom/inc/DiskCalorimeter.hh"
 // C++
@@ -32,7 +32,7 @@
 #include <vector>
 using namespace std;
 
-namespace TMVA_SOFIE_trackPID {
+namespace TMVA_SOFIE_TrackPID {
   class Session;
 }
 
@@ -64,7 +64,7 @@ namespace mu2e {
       art::InputTag _kalSeedTag;
       MVATools* _tchmva;
 
-      std::shared_ptr<TMVA_SOFIE_trackPID::Session> mva_;
+      std::shared_ptr<TMVA_SOFIE_TrackPID::Session> mva_;
   };
 
   TrackPIDV2::TrackPIDV2(const Parameters& config ) :
@@ -78,7 +78,7 @@ namespace mu2e {
     produces<MVAResultCollection>();
     _tchmva->initMVA();
     if(_debug> 0)_tchmva->showMVA();
-    mva_ = std::make_shared<TMVA_SOFIE_trackPID::Session>("Offline/TrkDiag/data/trackPID.dat");
+    mva_ = std::make_shared<TMVA_SOFIE_TrackPID::Session>("Offline/TrkDiag/data/trackPID.dat");
   }
 
   void TrackPIDV2::produce(art::Event& event ) {
