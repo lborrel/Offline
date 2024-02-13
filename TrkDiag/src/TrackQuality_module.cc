@@ -17,10 +17,11 @@
 #include "Offline/Mu2eUtilities/inc/MVATools.hh"
 #include "Offline/GlobalConstantsService/inc/GlobalConstantsHandle.hh"
 #include "Offline/GlobalConstantsService/inc/ParticleDataList.hh"
+#include "Offline/ConfigTools/inc/ConfigFileLookupPolicy.hh"
 // data
 #include "Offline/RecoDataProducts/inc/KalSeed.hh"
 #include "Offline/RecoDataProducts/inc/MVAResult.hh"
-#include "Offline/TrkDiag/inc/trkqual.hxx"
+#include "Offline/TrkDiag/inc/TrkQual_ANN1.hxx"
 // C++
 #include <iostream>
 #include <fstream>
@@ -32,13 +33,13 @@ using namespace std;
 using CLHEP::Hep3Vector;
 using CLHEP::HepVector;
 
-namespace TMVA_SOFIE_trkqual {
+namespace TMVA_SOFIE_TrkQual_ANN1 {
   class Session;
 }
 namespace mu2e
 {
 
-  class TrackQualityV2 : public art::EDProducer
+  class TrackQuality : public art::EDProducer
   {
     public:
       struct Config {
@@ -47,10 +48,11 @@ namespace mu2e
 
         fhicl::Atom<art::InputTag> kalSeedTag{Name("KalSeedCollection"), Comment("Input tag for KalSeedCollection")};
         fhicl::Atom<bool> printMVA{Name("PrintMVA"), Comment("Print the MVA used"), false};
+        fhicl::Atom<std::string> datFilename{Name("datFilename"), Comment("Filename for the .dat file to use")};
       };
 
       using Parameters = art::EDProducer::Table<Config>;
-      TrackQualityV2(const Parameters& conf);
+      TrackQuality(const Parameters& conf);
 
     private:
       void produce(art::Event& event) override;
@@ -59,20 +61,22 @@ namespace mu2e
       art::InputTag _kalSeedTag;
       bool _printMVA;
 
-    std::shared_ptr<TMVA_SOFIE_trkqual::Session> mva_;
+    std::shared_ptr<TMVA_SOFIE_TrkQual_ANN1::Session> mva_;
 
   };
 
-  TrackQualityV2::TrackQualityV2(const Parameters& conf) :
+  TrackQuality::TrackQuality(const Parameters& conf) :
     art::EDProducer{conf},
     _kalSeedTag(conf().kalSeedTag()),
     _printMVA(conf().printMVA())
     {
       produces<MVAResultCollection>();
-      mva_ = std::make_shared<TMVA_SOFIE_trkqual::Session>("Offline/TrkDiag/data/trkqual.dat");
+
+      ConfigFileLookupPolicy configFile;
+      mva_ = std::make_shared<TMVA_SOFIE_TrkQual_ANN1::Session>(configFile(conf().datFilename()));
     }
 
-  void TrackQualityV2::produce(art::Event& event ) {
+  void TrackQuality::produce(art::Event& event ) {
     // create output
     unique_ptr<MVAResultCollection> mvacol(new MVAResultCollection());
 
@@ -140,7 +144,7 @@ namespace mu2e
     }
 
     if ( (mvacol->size() != kalSeeds.size()) ) {
-      throw cet::exception("TrackQualityV2") << "KalSeed and MVAResult sizes are inconsistent (" << kalSeeds.size() << ", " << mvacol->size();
+      throw cet::exception("TrackQuality") << "KalSeed and MVAResult sizes are inconsistent (" << kalSeeds.size() << ", " << mvacol->size();
     }
 
 
@@ -149,4 +153,4 @@ namespace mu2e
   }
 }// mu2e
 
-DEFINE_ART_MODULE(mu2e::TrackQualityV2)
+DEFINE_ART_MODULE(mu2e::TrackQuality)

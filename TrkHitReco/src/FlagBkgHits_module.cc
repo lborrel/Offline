@@ -65,7 +65,7 @@ namespace mu2e
       bool                                        savebkg_;
       StrawHitFlag                                bkgmsk_;
       StrawIdMask::Level                          level_; // output level
-      BkgClusterer*                               clusterer_;
+      std::unique_ptr<BkgClusterer>               clusterer_;
       float                                       cperr2_;
       int const                                   debug_;
       std::string                                 kerasW_;
@@ -109,7 +109,7 @@ namespace mu2e
       switch ( ctype )
       {
         case TwoNiveauThreshold:
-          clusterer_ = new TNTClusterer(config().TNTClustering());
+          clusterer_ = std::make_unique<TNTClusterer>(config().TNTClustering());
           break;
         default:
           throw cet::exception("RECO")<< "Unknown clusterer" << ctype << std::endl;
@@ -128,7 +128,6 @@ namespace mu2e
   //------------------------------------------------------------------------------------------
   void FlagBkgHits::produce(art::Event& event )
   {
-
     auto chH = event.getValidHandle(chtoken_);
     const ComboHitCollection& chcol = *chH.product();
     unsigned nch = chcol.size();
@@ -198,8 +197,8 @@ namespace mu2e
             }
           }
         }
-        if(chcol_out->size() != chcol_p.size())
-          throw cet::exception("RECO")<< "FlagBkgHits: inconsistent ComboHit outout" << std::endl;
+        if((! filter_) && chcol_out->size() != chcol_p.size())
+          throw cet::exception("RECO")<< "FlagBkgHits: inconsistent ComboHit output" << std::endl;
       }
     }
     event.put(std::move(chcol_out));
@@ -241,6 +240,7 @@ namespace mu2e
         }
         nhits += hitplanes[ip];
       }
+
       if(nhits >= minnhits_ && np >= minnp_){
         // find averages
         double sumEdep(0.);
