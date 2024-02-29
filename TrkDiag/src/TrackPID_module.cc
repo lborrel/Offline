@@ -17,6 +17,7 @@
 #include "canvas/Utilities/InputTag.h"
 // utilities
 #include "Offline/Mu2eUtilities/inc/MVATools.hh"
+#include "Offline/ConfigTools/inc/ConfigFileLookupPolicy.hh"
 // data
 #include "Offline/RecoDataProducts/inc/KalSeed.hh"
 #include "Offline/RecoDataProducts/inc/MVAResult.hh"
@@ -37,7 +38,7 @@ namespace TMVA_SOFIE_TrackPID {
 }
 
 namespace mu2e {
-  class TrackPIDV2 : public art::EDProducer {
+  class TrackPID : public art::EDProducer {
     public:
       using Name=fhicl::Name;
       using Comment=fhicl::Comment;
@@ -52,10 +53,11 @@ namespace mu2e {
           Comment("KalSeedCollection producer")};
         fhicl::Table<typename MVATools::Config> MVAConfig{fhicl::Name("MVAConfig"),
           fhicl::Comment("MVA Configuration") };
+        fhicl::Atom<std::string> datFilename{Name("datFilename"), Comment("Filename for the .dat file to use")};
       };
 
       using Parameters = art::EDProducer::Table<Config>;
-      explicit TrackPIDV2(const Parameters& conf);
+      explicit TrackPID(const Parameters& conf);
 
     private:
       void produce(art::Event& event) override;
@@ -67,7 +69,7 @@ namespace mu2e {
       std::shared_ptr<TMVA_SOFIE_TrackPID::Session> mva_;
   };
 
-  TrackPIDV2::TrackPIDV2(const Parameters& config ) :
+  TrackPID::TrackPID(const Parameters& config ) :
     art::EDProducer(config),
     _debug(config().debug()),
     _maxde(config().MaxDE()),
@@ -75,13 +77,15 @@ namespace mu2e {
     _kalSeedTag(config().KSC()),
     _tchmva(new MVATools(config().MVAConfig()))
   {
-    produces<MVAResultCollection>();
     _tchmva->initMVA();
     if(_debug> 0)_tchmva->showMVA();
-    mva_ = std::make_shared<TMVA_SOFIE_TrackPID::Session>("Offline/TrkDiag/data/trackPID.dat");
+    produces<MVAResultCollection>();
+
+    ConfigFileLookupPolicy configFile;
+    mva_ = std::make_shared<TMVA_SOFIE_TrackPID::Session>(configFile(config().datFilename()));
   }
 
-  void TrackPIDV2::produce(art::Event& event ) {
+  void TrackPID::produce(art::Event& event ) {
     mu2e::GeomHandle<mu2e::Calorimeter> calo;
     // create output
     unique_ptr<MVAResultCollection> mvacol(new MVAResultCollection());
@@ -133,4 +137,4 @@ namespace mu2e {
   }
 }// mu2e
 
-DEFINE_ART_MODULE(mu2e::TrackPIDV2)
+DEFINE_ART_MODULE(mu2e::TrackPID)
